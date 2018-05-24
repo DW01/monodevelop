@@ -47,9 +47,9 @@ type FSharpTooltipProvider() =
             let doc = IdeApp.Workbench.ActiveDocument
             if doc = null then noTooltip else
 
-            let file = doc.FileName.FullPath.ToString()
+            let file = doc.FileName.FullPath
 
-            if not (FileService.supportedFileName file) then noTooltip else
+            if not (FileService.supportedFilePath file) then noTooltip else
 
             let source = editor.Text
             if source = null || offset >= source.Length || offset < 0 then noTooltip else
@@ -61,7 +61,7 @@ type FSharpTooltipProvider() =
             let tooltipComputation =
                 asyncChoice {
                     try
-                        LoggingService.LogDebug "TooltipProvider: Getting tool tip"
+                        LoggingService.logDebug "TooltipProvider: Getting tool tip"
 
                         let parseAndCheckResults = context.TryGetAst()
                         match parseAndCheckResults with

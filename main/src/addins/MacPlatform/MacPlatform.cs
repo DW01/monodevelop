@@ -54,6 +54,7 @@ using ObjCRuntime;
 using System.Diagnostics;
 using Xwt.Mac;
 using MonoDevelop.Components.Mac;
+using System.Reflection;
 
 namespace MonoDevelop.MacIntegration
 {
@@ -156,7 +157,50 @@ namespace MonoDevelop.MacIntegration
 
 			Xwt.Toolkit.CurrentEngine.RegisterBackend<IExtendedTitleBarWindowBackend,ExtendedTitleBarWindowBackend> ();
 			Xwt.Toolkit.CurrentEngine.RegisterBackend<IExtendedTitleBarDialogBackend,ExtendedTitleBarDialogBackend> ();
+
+			var description = XamMacBuildInfo.Value;
+			if (string.IsNullOrEmpty (description)) {
+				LoggingService.LogWarning ("Failed to parse version of Xamarin.Mac used at runtime");
+			} else {
+				LoggingService.LogInfo ("Using {0}", description);
+			}
 		}
+
+		static string GetInfoPart (string line)
+		{
+			return line.Split (':') [1].Trim ();
+		}
+
+		static Lazy<string> XamMacBuildInfo = new Lazy<string> (() => {
+			const string buildInfoResource = "Xamarin.Mac.buildinfo";
+			var asm = System.Reflection.Assembly.GetExecutingAssembly ();
+
+			string version, hash, branch;
+
+			try {
+				using (var stream = asm.GetManifestResourceStream (buildInfoResource))
+				using (var sr = new StreamReader (stream)) {
+					// Version: 4.4.0.36
+					// Hash: 0c7c49a6
+					// Branch: master
+					// Build date: 2018 - 03 - 12 15:24:46 - 0400 -- discarded
+
+					version = GetInfoPart (sr.ReadLine ());
+					hash = GetInfoPart (sr.ReadLine ());
+					branch = GetInfoPart (sr.ReadLine ());
+
+					return $"Xamarin.Mac {version} ({branch} / {hash})";
+				}
+			} catch {
+				return string.Empty;
+			}
+		});
+
+		internal override string GetNativeRuntimeDescription ()
+		{
+			return XamMacBuildInfo.Value;
+		}
+
 
 		static void CheckGtkVersion (uint major, uint minor, uint micro)
 		{
@@ -191,7 +235,9 @@ namespace MonoDevelop.MacIntegration
 		public override Xwt.Toolkit LoadNativeToolkit ()
 		{
 			var path = Path.GetDirectoryName (GetType ().Assembly.Location);
-			System.Reflection.Assembly.LoadFrom (Path.Combine (path, "Xwt.XamMac.dll"));
+			Assembly.LoadFrom (Path.Combine (path, "Xwt.XamMac.dll"));
+
+			// Also calls NSApplication.Init();
 			var loaded = Xwt.Toolkit.Load (Xwt.ToolkitType.XamMac);
 
 			loaded.RegisterBackend<Xwt.Backends.IDialogBackend, ThemedMacDialogBackend> ();
@@ -242,6 +288,10 @@ namespace MonoDevelop.MacIntegration
 				Gtk.Rc.ParseString ("style \"default\" { engine \"xamarin\" { focusstyle = 2 } }");
 				Gtk.Rc.ParseString ("style \"radio-or-check-box\" { engine \"xamarin\" { focusstyle = 2 } } ");
 			}
+
+			// Disallow window tabbing globally
+			if (MacSystemInformation.OsVersion >= MacSystemInformation.Sierra)
+				NSWindow.AllowsAutomaticWindowTabbing = false;
 
 			return loaded;
 		}
@@ -403,6 +453,8 @@ namespace MonoDevelop.MacIntegration
 				IdeApp.Workbench.RootWindow.Realized += (sender, args) => {
 					var win = GtkQuartz.GetWindow ((Gtk.Window) sender);
 					win.CollectionBehavior |= NSWindowCollectionBehavior.FullScreenPrimary;
+					if (MacSystemInformation.OsVersion >= MacSystemInformation.Sierra)
+						win.TabbingMode = NSWindowTabbingMode.Disallowed;
 				};
 			}
 
@@ -997,6 +1049,9 @@ namespace MonoDevelop.MacIntegration
 
 		public override bool IsModalDialogRunning ()
 		{
+			if (NSApplication.SharedApplication.ModalWindow != null)
+				return true;
+
 			var toplevels = GtkQuartz.GetToplevels ();
 
 			// Check GtkWindow's Modal flag or for a visible NSPanel

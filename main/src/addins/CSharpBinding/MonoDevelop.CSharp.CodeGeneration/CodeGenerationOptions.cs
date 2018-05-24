@@ -40,6 +40,7 @@ using MonoDevelop.Ide.Editor;
 using MonoDevelop.Ide.Gui.Content;
 using MonoDevelop.Ide.TypeSystem;
 using System;
+using MonoDevelop.CSharp;
 
 namespace MonoDevelop.CodeGeneration
 {
@@ -101,8 +102,8 @@ namespace MonoDevelop.CodeGeneration
 		{
 			Editor = editor;
 			DocumentContext = ctx;
-			if (ctx.ParsedDocument != null)
-				CurrentState = ctx.ParsedDocument.GetAst<SemanticModel> ();
+			if (ctx.AnalysisDocument != null)
+				CurrentState = ctx.AnalysisDocument.GetSemanticModelAsync ().WaitAndGetResult ();
 			offset = editor.CaretOffset;
 			var tree = CurrentState.SyntaxTree;
 			EnclosingPart = tree.GetContainingTypeDeclaration (offset, default(CancellationToken));
@@ -133,7 +134,7 @@ namespace MonoDevelop.CodeGeneration
 
 		public async Task<string> OutputNode (SyntaxNode node, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			var options = await DocumentContext.AnalysisDocument.GetOptionsAsync (cancellationToken);
+			var options = await DocumentContext.GetOptionsAsync (cancellationToken);
 			node = Formatter.Format (node, TypeSystemService.Workspace, options, cancellationToken);
 
 			var text = Editor.Text;
